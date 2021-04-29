@@ -8,6 +8,41 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from scipy.sparse import csr_matrix
 
+def solver_petsc_i(csr, shape, rhs, solver, comm=None):
+  # Uppercase for numpy sparse arrays
+  # Lowercase for PETSc arrays/matrices
+
+  #---- Set up arrays -----
+  a = PETSc.Mat().createAIJ(comm=comm, size=shape, csr=csr)
+
+  a.setUp()
+  a.assemblyBegin()
+  a.assemblyEnd()
+  x, b = a.getVecs()
+  b.setArray(rhs)
+
+  #---- Set up solver -----
+  ksp = PETSc.KSP().create(comm=comm)
+
+  # This implements a method that applies ONLY the preconditioner exactly once.
+  # This may be used in inner iterations, where it is desired to allow multiple iterations as well as the "0-iteration" case.
+  # It is commonly used with the direct solver preconditioners like PCLU and PCCHOLESKY
+  ksp.setType('preonly')
+
+  pc = ksp.getPC()
+  pc.setType('lu')
+
+  pc.setFactorSolverType(solver)
+
+  ksp.setOperators(a)
+  ksp.setFromOptions() # Apply any command line options
+  ksp.setUp()
+
+  #---- Solve -----
+  ksp.solve(b, x)
+
+  return x
+
 #---- Get MPI info ----
 comm   = MPI.COMM_WORLD
 nprocs = comm.Get_size()
@@ -91,38 +126,7 @@ else:
 # Broadcast matrix shape to each MPI task
 shape = comm.bcast(shape, root=0)
 
-
-#---- Create PETSc matrix and vectors ----
-a = PETSc.Mat().createAIJ(comm=comm,
-                          size=shape,
-                          csr=(A_indptr,A_indices,A_data)
-                          )
-a.setUp()
-a.assemblyBegin()
-a.assemblyEnd()
-x, b = a.getVecs()
-b.setArray(B)
-
-#---- Set up solver -----
-ksp = PETSc.KSP().create(comm=comm)
-
-# This implements a method that applies ONLY the preconditioner exactly once.
-# This may be used in inner iterations, where it is desired to allow multiple iterations as well as the "0-iteration" case.
-# It is commonly used with the direct solver preconditioners like PCLU and PCCHOLESKY
-ksp.setType('preonly')
-
-pc = ksp.getPC()
-pc.setType('lu')
-
-pc.setFactorSolverType('superlu_dist')
-
-ksp.setOperators(a)
-ksp.setFromOptions() # Apply any command line options for ksp
-ksp.setUp()
-
-#---- Solve -----
-ksp.solve(b, x)
-
+x = solver_petsc_i(csr=(A_indptr,A_indices,A_data), shape=shape, rhs=B, solver='mumps', comm=comm)
 
 #---- Gather the solution onto a single array on the master MPI task
 if rank == 0:
