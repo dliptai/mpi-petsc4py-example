@@ -6,7 +6,15 @@ petsc4py.init(sys.argv)
 
 from mpi4py import MPI
 from petsc4py import PETSc
-from scipy.sparse import csr_matrix
+from scipy.sparse import random
+
+# Create a set of matrices and vectors for testing that satisfy: AX = B
+def create_system(size, seed=42, density=0.1):
+  rng = np.random.default_rng(seed=seed)
+  A = random(size, size, density=density, format='csr', dtype=np.double, random_state=rng)
+  X = rng.random(size)
+  B = A.dot(X)
+  return A, X, B
 
 def solver_petsc_i(csr, shape, rhs, solver, comm=None):
   # Uppercase for numpy sparse arrays
@@ -49,9 +57,10 @@ nprocs = comm.Get_size()
 rank   = comm.Get_rank()
 
 if rank == 0:
-  # Load matrix & vector on master MPI task
-  A     = csr_matrix(np.loadtxt('A.txt',dtype=np.double))
-  B_all = np.loadtxt('B.txt')
+  # Set up matrix & vector on master MPI task, as well as solution vector
+  size = 100
+  A, X_actual, B_all = create_system(size=size, seed=42, density=0.1)
+
   shape = A.shape
   nrows = shape[0]
 
@@ -135,7 +144,6 @@ else:
   X = None
 comm.Gatherv(x.array,X)
 
-#---- Compare solution to expected answer (from file)
+#---- Compare solution to expected answer
 if rank == 0:
-  X_actual = np.loadtxt('X.txt')
   print(np.allclose(X,X_actual))
