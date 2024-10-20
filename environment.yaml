@@ -1,0 +1,8 @@
+channels:
+  - conda-forge
+dependencies:
+  - openmpi=4
+  - openmpi-mpicxx
+  - petsc4py
+  - mpi4py
+  - scipy
